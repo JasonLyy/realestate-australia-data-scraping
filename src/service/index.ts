@@ -1,12 +1,26 @@
-import RealestateScraper from "../adapters/YourInvestmentpropertyScraper";
 import RootScraper from "../adapters/RootScraper";
+import {
+  YourInvestmentPropertySuburbLinksScraper,
+  YourInvestmentPropertySuburbsScraper,
+} from "../adapters/YourInvestmentProperty";
+import fs from "fs";
 
 (async () => {
-  const scraper = await new RootScraper().initialise();
+  const scraper = await new RootScraper();
+  const browser = await scraper.initialise();
 
-  const realestateScraper = new RealestateScraper(scraper, [
-    "https://www.yourinvestmentpropertymag.com.au/top-suburbs/vic-3019-braybrook.aspx",
-  ]);
+  const linkScraper = new YourInvestmentPropertySuburbLinksScraper(browser);
+  const links = await linkScraper.getSuburbLinksMapping();
 
-  console.log(await realestateScraper.getData());
+  const suburbsScraper = new YourInvestmentPropertySuburbsScraper(
+    browser,
+    links
+  );
+
+  const result = await suburbsScraper.getSuburbsData();
+  console.log("Result: ", result);
+
+  fs.writeFileSync("output.json", JSON.stringify(result));
+
+  await browser.close();
 })();

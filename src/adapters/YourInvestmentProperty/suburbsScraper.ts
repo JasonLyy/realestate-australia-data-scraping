@@ -1,28 +1,70 @@
 import {
-  Scraper,
   YourInvestmentPropertyData,
   PropertyType,
-} from "../domain/YourInvestmentPropertyScraper";
+  SuburbLinkMapping,
+} from "../../domain/YourInvestmentPropertyScraper";
 import { Browser, Page } from "playwright";
 
-export default class YourInvestmentPropertyScraper implements Scraper {
+export class YourInvestmentPropertySuburbsScraper {
   #browser: Browser;
-  #suburbUrls: string[];
+  #suburbUrls: SuburbLinkMapping;
 
-  constructor(browser: Browser, suburbUrls: string[]) {
+  constructor(browser: Browser, suburbUrls: SuburbLinkMapping) {
     this.#browser = browser;
-
-    if (!browser) {
-      throw new Error("Missing browser");
-    }
     this.#suburbUrls = suburbUrls;
   }
 
-  async getData(): Promise<YourInvestmentPropertyData> {
-    const testFirstUrl = this.#suburbUrls[0];
+  async getSuburbsData(): Promise<{
+    [key: keyof SuburbLinkMapping]: YourInvestmentPropertyData;
+  }> {
+    const baseUrl = "https://www.yourinvestmentpropertymag.com.au";
 
-    const page = await this.#browser.newPage();
-    await page.goto(testFirstUrl);
+    const fullSuburbLinkMapping = Object.keys(this.#suburbUrls).reduce(
+      (mapping, suburb) => {
+        return {
+          ...mapping,
+          [suburb]: `${baseUrl}${this.#suburbUrls[suburb]}`,
+        };
+      },
+      this.#suburbUrls
+    );
+
+    const entries = Object.entries(fullSuburbLinkMapping);
+
+    const totalSuburbData: {
+      [x: string]: YourInvestmentPropertyData;
+    }[] = [];
+    while (entries.length) {
+      const suburbData = await Promise.all(
+        entries.splice(0, 10).map(async ([suburb, url]) => ({
+          [suburb]: await this.#getSuburbData(url),
+        }))
+      );
+      totalSuburbData.concat(suburbData);
+    }
+
+    return totalSuburbData.reduce((acc, curr) => {
+      return {
+        ...acc,
+        ...curr,
+      };
+    });
+  }
+
+  async #getSuburbData(url: string): Promise<YourInvestmentPropertyData> {
+    console.log("Scraping: ", url);
+    const testFirstUrl = url;
+
+    const context = await this.#browser.newContext();
+    const page = await context.newPage();
+    await page
+      .goto(testFirstUrl, {
+        waitUntil: "domcontentloaded",
+      })
+      .catch((e) => {
+        console.log(e);
+        return;
+      });
 
     const propertyRawData = await Promise.all(
       [PropertyType.HOUSE, PropertyType.UNIT].map((type) =>
@@ -38,7 +80,17 @@ export default class YourInvestmentPropertyScraper implements Scraper {
           this.#getDsrRating(page, type),
         ])
       )
-    );
+    ).catch((e) => {
+      console.log(e);
+      return [
+        [-1, -1, -1, -1, -1, -1, -1, -1, "Error"],
+        [-1, -1, -1, -1, -1, -1, -1, -1, "Error"],
+      ];
+    });
+
+    console.log("Scraped: ", url);
+    await context.close();
+    await page.close();
 
     return [PropertyType.HOUSE, PropertyType.UNIT].reduce(
       (finalData, type, i) => {
@@ -75,14 +127,17 @@ export default class YourInvestmentPropertyScraper implements Scraper {
 
   async #getMedianPrice(page: Page, type: PropertyType) {
     return this.#formatScrappedTextAsNumber(
-      (await page.locator(`.align_r.${type}.Median`).textContent()) ?? "$0"
+      (await page
+        .locator(`.align_r.${type}.Median`)
+        .textContent({ timeout: 2000 })) ?? "$0"
     );
   }
 
   async #getQuarterlyGrowth(page: Page, type: PropertyType) {
     return this.#formatScrappedTextAsNumber(
-      (await page.locator(`.align_r.${type}.QuarterlyGrowth`).textContent()) ??
-        "%0"
+      (await page
+        .locator(`.align_r.${type}.QuarterlyGrowth`)
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
@@ -93,7 +148,7 @@ export default class YourInvestmentPropertyScraper implements Scraper {
           // have to use XPath as Selector does not like classes beginning with numbers
           `//td[contains(@class, 'align_r') and contains(@class, '${type}') and contains(@class, '1yr')]`
         )
-        .textContent()) ?? "%0"
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
@@ -101,7 +156,7 @@ export default class YourInvestmentPropertyScraper implements Scraper {
     return this.#formatScrappedTextAsNumber(
       (await page
         .locator(`.align_r.${type}.MedianGrowthThisYr`) // not a typo MedianGrowthThisYr -> 10 year growth
-        .textContent()) ?? "%0"
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
@@ -109,27 +164,31 @@ export default class YourInvestmentPropertyScraper implements Scraper {
     return this.#formatScrappedTextAsNumber(
       (await page
         .locator(`.align_r.${type}.WeeklyMedianAdvertisedRent`)
-        .textContent()) ?? "%0"
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
   async #getNumberOfAnnualSales(page: Page, type: PropertyType) {
     return this.#formatScrappedTextAsNumber(
-      (await page.locator(`.align_r.${type}.NumberSold`).textContent()) ?? "%0"
+      (await page
+        .locator(`.align_r.${type}.NumberSold`)
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
   async #getGrossAnnualRentalYield(page: Page, type: PropertyType) {
     return this.#formatScrappedTextAsNumber(
-      (await page.locator(`.align_r.${type}.GrossRentalYield`).textContent()) ??
-        "%0"
+      (await page
+        .locator(`.align_r.${type}.GrossRentalYield`)
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
   async #getDaysOnMarket(page: Page, type: PropertyType) {
     return this.#formatScrappedTextAsNumber(
-      (await page.locator(`.align_r.${type}.DaysOnMarket`).textContent()) ??
-        "%0"
+      (await page
+        .locator(`.align_r.${type}.DaysOnMarket`)
+        .textContent({ timeout: 2000 })) ?? "%0"
     );
   }
 
@@ -140,9 +199,15 @@ export default class YourInvestmentPropertyScraper implements Scraper {
     const dsrScoreElements = dsrScoreRow.locator(".avg");
     switch (type) {
       case PropertyType.HOUSE:
-        return dsrScoreElements.nth(0).textContent();
+        return (
+          (await dsrScoreElements.nth(0).textContent({ timeout: 2000 })) ?? ""
+        );
       case PropertyType.UNIT:
-        return dsrScoreElements.nth(1).textContent();
+        return (
+          (await dsrScoreElements.nth(1).textContent({ timeout: 2000 })) ?? ""
+        );
+      default:
+        return "Error DSR Score";
     }
   }
 

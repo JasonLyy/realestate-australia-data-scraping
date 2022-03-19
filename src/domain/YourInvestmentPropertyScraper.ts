@@ -1,6 +1,6 @@
-export interface Scraper {
-  getData(): Promise<YourInvestmentPropertyData>;
-}
+export type SuburbLinkMapping = {
+  [key: string]: string;
+};
 
 export type YourInvestmentPropertyDataFields = {
   medianPrice: number;
@@ -12,6 +12,7 @@ export type YourInvestmentPropertyDataFields = {
   grossAnnualRentalYield: number;
   daysOnMarket: number;
   dsrRating: string;
+  lastUpdated: Date;
 };
 
 export type YourInvestmentPropertyData = {
